@@ -107,16 +107,24 @@ def download_video(url, filename, progress_callback, max_retries=3, retry_delay=
             total_size = int(response.headers.get('content-length', 0))
             os.makedirs("output", exist_ok=True)
 
+            from tqdm import tqdm
+
             downloaded_size = 0
             filepath = os.path.join("output", filename)
             start_time = time.time()
             last_update_time = start_time
 
-            with open(filepath, 'wb') as f:
+            with open(filepath, 'wb') as f, tqdm(
+                total=total_size,
+                unit='B',
+                unit_scale=True,
+                desc=f"Téléchargement de {filename}"
+            ) as pbar:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
                         downloaded_size += len(chunk)
+                        pbar.update(len(chunk))
                         current_time = time.time()
 
                         # Update progress and speed every second
@@ -249,15 +257,15 @@ def start_download_process(url, selected_episodes_tuples, progress=gr.Progress()
             queue.clear()
 
         def download_worker(ep_num, link, progress_callback, result_list):
-            nonlocal active_downloads
-            try:
-                ep_name = f"{anime_name}-ep-{ep_num}.mp4"
-                status = download_video(link, ep_name, progress_callback)
-                result_list.append(status)
-                print(status)
-            finally:
-                with queue_lock:
-                    active_downloads -= 1
+                    nonlocal active_downloads
+                    try:
+                        ep_name = f"{anime_name}-ep-{ep_num}.mp4"
+                        status = download_video(link, ep_name, progress_callback)
+                        result_list.append(status)
+                        print(status)
+                    finally:
+                        with queue_lock:
+                            active_downloads -= 1
 
         for i, (ep_num, link) in enumerate(items_to_process):
             # Wait if we've reached the maximum number of concurrent downloads
