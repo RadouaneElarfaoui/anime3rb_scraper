@@ -7,6 +7,7 @@ import cloudscraper
 from bs4 import BeautifulSoup
 import gradio as gr
 import re # Import regex module
+from tqdm import tqdm
 
 # --- Global Variables & Setup ---
 queue = deque()
@@ -21,138 +22,23 @@ scraper = cloudscraper.create_scraper()
 
 def download_video(url, filename, progress_callback, max_retries=3, retry_delay=5):
     """
-    (ENHANCED VERSION) Downloads a single video file with progress reporting, error handling, and retry logic.
-    This version handles intermediate download pages, is thread-safe, and includes advanced features.
+    Downloads a single video file with print statements instead of a progress callback.
     """
-    for attempt in range(max_retries):
-        try:
-            # 1. Create a new scraper instance FOR EACH THREAD to ensure session isolation.
-            thread_scraper = cloudscraper.create_scraper()
+    response = scraper.get(url, headers=headers, stream=True)
 
-            print(f"[{filename}] Attempt {attempt + 1}/{max_retries}: Visiting intermediate page: {url}")
+    if response.status_code != 200:
+        print(f"Failed to download video: {response.status_code}")
+        return "Échec du téléchargement"
 
-            # 2. Get the intermediate page with timeout handling.
-            intermediate_page_response = thread_scraper.get(url, headers=headers, timeout=30)
-            intermediate_page_response.raise_for_status()
+    total_size = int(response.headers.get('content-length', 0))
+    os.makedirs("output", exist_ok=True)
 
-            # 3. Parse the intermediate page to find the final, direct download link.
-            soup = BeautifulSoup(intermediate_page_response.content, "html.parser")
-
-            # Add more detailed logging to help diagnose the issue
-            print(f"[{filename}] Intermediate page content: {intermediate_page_response.content[:500]}...")  # Log first 500 characters of the page content
-
-            # Try to find the download link using the same logic as anime3rb_dl.py
-            download_links_holder = soup.find("div", class_="flex-grow flex flex-wrap gap-4 justify-center")
-            if not download_links_holder:
-                print(f"[{filename}] Failed to find download links container in intermediate page")
-                # Try alternative class names that might be used for the download links container
-                download_links_holder = soup.find("div", class_="flex flex-wrap gap-4 justify-center")
-                if not download_links_holder:
-                    download_links_holder = soup.find("div", class_="flex-grow flex-wrap gap-4 justify-center")
-                    if not download_links_holder:
-                        print(f"[{filename}] Failed to find download links container with alternative class names")
-                        if attempt == max_retries - 1:
-                            return f"Échec pour {filename}: Impossible de trouver le conteneur de liens de téléchargement après {max_retries} tentatives."
-                        else:
-                            print(f"[{filename}] Conteneur de liens de téléchargement non trouvé. Réessai dans {retry_delay} secondes...")
-                            time.sleep(retry_delay)
-                            continue
-
-            download_links = download_links_holder.find_all("label")
-            desired = [None, None]
-
-            for link in download_links:
-                if "480" in link.text:
-                    desired = [480, link]
-                elif "720" in link.text and desired[0] != 1080:
-                    desired = [720, link]
-                elif not desired[1]:
-                    desired = [1080, link]
-
-            if desired[1]:
-                final_link_tag = desired[1].parent.find("a")
-                if final_link_tag and final_link_tag.has_attr('href'):
-                    final_url = final_link_tag['href']
-                    print(f"[{filename}] Lien de téléchargement final trouvé: {final_url}")
-                else:
-                    print(f"[{filename}] Failed to find associated <a> tag for the best quality link")
-                    if attempt == max_retries - 1:
-                        return f"Échec pour {filename}: Impossible de trouver le lien de téléchargement final après {max_retries} tentatives."
-                    else:
-                        print(f"[{filename}] Lien de téléchargement final non trouvé. Réessai dans {retry_delay} secondes...")
-                        time.sleep(retry_delay)
-                        continue
-            else:
-                print(f"[{filename}] No valid download link quality found in intermediate page")
-                if attempt == max_retries - 1:
-                    return f"Échec pour {filename}: Aucune qualité de lien de téléchargement valide trouvée après {max_retries} tentatives."
-                else:
-                    print(f"[{filename}] Aucune qualité de lien de téléchargement valide trouvée. Réessai dans {retry_delay} secondes...")
-                    time.sleep(retry_delay)
-                    continue
-
-            # 4. Download the actual video file from the final URL with timeout and progress tracking.
-            response = thread_scraper.get(final_url, headers=headers, stream=True, timeout=60)
-            response.raise_for_status()
-
-            content_type = response.headers.get('content-type', '')
-            if 'text/html' in content_type:
-                if attempt == max_retries - 1:
-                    return f"Échec pour {filename}: Le lien final était une page HTML, pas une vidéo après {max_retries} tentatives."
-                else:
-                    print(f"[{filename}] Le lien final était une page HTML. Réessai dans {retry_delay} secondes...")
-                    time.sleep(retry_delay)
-                    continue
-
-            total_size = int(response.headers.get('content-length', 0))
-            os.makedirs("output", exist_ok=True)
-
-            from tqdm import tqdm
-
-            downloaded_size = 0
-            filepath = os.path.join("output", filename)
-            start_time = time.time()
-            last_update_time = start_time
-
-            with open(filepath, 'wb') as f, tqdm(
-                total=total_size,
-                unit='B',
-                unit_scale=True,
-                desc=f"Téléchargement de {filename}"
-            ) as pbar:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        pbar.update(len(chunk))
-                        current_time = time.time()
-
-                        # Update progress and speed every second
-                        if current_time - last_update_time >= 1.0 or downloaded_size == total_size:
-                            elapsed_time = current_time - start_time
-                            speed = downloaded_size / (1024 * 1024 * elapsed_time) if elapsed_time > 0 else 0
-                            progress = downloaded_size / total_size if total_size > 0 else 0
-                            progress_callback(progress, f"Téléchargement de {filename}... {progress:.1%} | Vitesse: {speed:.2f} MB/s")
-                            last_update_time = current_time
-
-            # 5. Final verification of the downloaded file size.
-            if os.path.getsize(filepath) < 100 * 1024: # Less than 100 KB
-                os.remove(filepath) # Clean up the invalid file
-                if attempt == max_retries - 1:
-                    return f"Échec pour {filename}: Le fichier final est trop petit (erreur probable) après {max_retries} tentatives."
-                else:
-                    print(f"[{filename}] Fichier trop petit. Réessai dans {retry_delay} secondes...")
-                    time.sleep(retry_delay)
-                    continue
-
-            return f"{filename} téléchargé avec succès!"
-        except Exception as e:
-            if attempt == max_retries - 1:
-                return f"Échec du téléchargement de {filename} après {max_retries} tentatives: {str(e)}"
-            else:
-                print(f"[{filename}] Erreur: {str(e)}. Réessai dans {retry_delay} secondes...")
-                time.sleep(retry_delay)
-                continue
+    with open(f"output/{filename}", 'wb') as f:
+        with tqdm(total=total_size, unit='B', unit_scale=True, desc=filename) as pbar:
+            for chunk in response.iter_content(chunk_size=1024):
+                f.write(chunk)
+                pbar.update(len(chunk))
+    return "Téléchargement réussi"
 
 def get_episode_list(soup, anime_id):
     """
@@ -194,21 +80,32 @@ def get_download_links(episode_tuples: list[tuple]):
             print(f"Found download links holder for episode {ep_nbr} at {episode_url}")
             
             labels = download_links_holder.find_all("label")
+            # Initialise un dictionnaire pour suivre la meilleure qualité trouvée et la balise <label> correspondante.
+            # La qualité est initialisée à 0 pour s'assurer que toute qualité trouvée (480, 720, 1080) sera supérieure.
             best_link_tag_info = {'quality': 0, 'tag': None}
 
+            # Parcourt toutes les balises <label> qui représentent les options de qualité de téléchargement.
             for label in labels:
-                text = label.text.lower()
-                if "1080" in text and best_link_tag_info['quality'] < 1080:
-                    best_link_tag_info = {'quality': 1080, 'tag': label}
+                text = label.text.lower() # Convertit le texte de la balise en minuscules pour une comparaison insensible à la casse.
+                # Vérifie si "1080" est dans le texte et si c'est une meilleure qualité que celle actuellement stockée et n est pas 1080p HEVC.
+                if not( "hevc" in  text) and "1080" in text and best_link_tag_info['quality'] < 1080:
+                    best_link_tag_info = {'quality': 1080, 'tag': label} # Met à jour avec 1080p comme meilleure qualité.
+                # Sinon, vérifie si "720" est dans le texte et si c'est une meilleure qualité que celle actuellement stockée.
+                # Cette condition n'est évaluée que si 1080p n'a pas été trouvé ou si la qualité actuelle est inférieure à 720p.
                 elif "720" in text and best_link_tag_info['quality'] < 720:
-                    best_link_tag_info = {'quality': 720, 'tag': label}
+                    best_link_tag_info = {'quality': 720, 'tag': label} # Met à jour avec 720p.
+                # Sinon, vérifie si "480" est dans le texte et si c'est une meilleure qualité que celle actuellement stockée.
+                # Cette condition n'est évaluée que si 1080p et 720p n'ont pas été trouvés ou si la qualité actuelle est inférieure à 480p.
                 elif "480" in text and best_link_tag_info['quality'] < 480:
-                    best_link_tag_info = {'quality': 480, 'tag': label}
+                    best_link_tag_info = {'quality': 480, 'tag': label} # Met à jour avec 480p.
             
+            # Une fois toutes les balises <label> parcourues, 'best_label_tag' contient la balise correspondant à la plus haute qualité trouvée.
             best_label_tag = best_link_tag_info['tag']
 
             if best_label_tag:
+                # Trouve le conteneur parent de la balise <label> pour localiser le lien de téléchargement réel.
                 container = best_label_tag.parent
+                # Cherche la balise <a> (lien) à l'intérieur de ce conteneur.
                 link_tag = container.find('a') if container else None
 
                 if link_tag and link_tag.has_attr('href'):
@@ -225,7 +122,7 @@ def get_download_links(episode_tuples: list[tuple]):
             print(f"Error processing episode {episode_url}: {e}")
 
 
-def start_download_process(url, selected_episodes_tuples, progress=gr.Progress(), max_concurrent_downloads=3):
+def start_download_process(url, selected_episodes_tuples, max_concurrent_downloads=3):
     """
     Main download process function with enhanced parallel download handling.
     """
@@ -241,7 +138,7 @@ def start_download_process(url, selected_episodes_tuples, progress=gr.Progress()
         with queue_lock:
             queue.clear()
 
-        progress(0, "Recherche des liens de téléchargement...")
+        print("Recherche des liens de téléchargement...")
         get_download_links(selected_episodes_tuples)
 
         download_threads = []
@@ -256,11 +153,11 @@ def start_download_process(url, selected_episodes_tuples, progress=gr.Progress()
             items_to_process = list(queue)
             queue.clear()
 
-        def download_worker(ep_num, link, progress_callback, result_list):
+        def download_worker(ep_num, link, result_list):
                     nonlocal active_downloads
                     try:
                         ep_name = f"{anime_name}-ep-{ep_num}.mp4"
-                        status = download_video(link, ep_name, progress_callback)
+                        status = download_video(link, ep_name, None) # Changed to download_video
                         result_list.append(status)
                         print(status)
                     finally:
@@ -272,9 +169,8 @@ def start_download_process(url, selected_episodes_tuples, progress=gr.Progress()
             while active_downloads >= max_concurrent_downloads:
                 time.sleep(0.5)
 
-            # Create a unique progress tracker for each download
-            progress_tracker = gr.Progress(track_tqdm=True)
-            thread = threading.Thread(target=download_worker, args=(ep_num, link, progress_tracker, results))
+            # Removed progress_tracker = gr.Progress()
+            thread = threading.Thread(target=download_worker, args=(ep_num, link, results))
             download_threads.append(thread)
             with queue_lock:
                 active_downloads += 1
@@ -284,7 +180,7 @@ def start_download_process(url, selected_episodes_tuples, progress=gr.Progress()
         for thread in download_threads:
             thread.join()
 
-        return f"Processus terminé. {len([s for s in results if 'succès' in s])}/{num_to_download} épisodes téléchargés.\n" + "\n".join(results)
+        return f"Processus terminé. {len([s for s in results if 'réussi' in s])}/{num_to_download} épisodes téléchargés.\n" + "\n".join(results)
     except Exception as e:
         return f"Une erreur est survenue: {e}"
 
@@ -324,11 +220,11 @@ def search_anime(search_query):
     
     return gr.update(choices=results, value=None, interactive=True), anime_map
 
-def scrape_episode_list(url, progress=gr.Progress()):
+def scrape_episode_list(url):
     """Scrapes the anime page to get a list of all available episodes."""
     if not url:
         return gr.update(choices=[], value=[], label="URL is missing.")
-    progress(0, desc="Recherche de la page de l'anime...")
+    print("Recherche de la page de l'anime...")
     try:
         page = scraper.get(url, headers=headers)
         page.raise_for_status()
@@ -336,7 +232,7 @@ def scrape_episode_list(url, progress=gr.Progress()):
         
         anime_id = url.rstrip('/').split('/')[-1]
         print(f"Anime ID: {anime_id}")
-        progress(0.5, desc="Analyse des liens d'épisodes...")
+        print("Analyse des liens d'épisodes...")
         
         episode_tuples = get_episode_list(soup, anime_id)
         print(f"Found {len(episode_tuples)} episode links: {episode_tuples}")
