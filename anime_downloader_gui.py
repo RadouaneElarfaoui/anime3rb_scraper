@@ -87,8 +87,14 @@ def get_download_links(episode_tuples: list[tuple]):
             # Parcourt toutes les balises <label> qui représentent les options de qualité de téléchargement.
             for label in labels:
                 text = label.text.lower() # Convertit le texte de la balise en minuscules pour une comparaison insensible à la casse.
-                # Vérifie si "1080" est dans le texte et si c'est une meilleure qualité que celle actuellement stockée et n est pas 1080p HEVC.
-                if not( "hevc" in  text) and "1080" in text and best_link_tag_info['quality'] < 1080:
+                
+                # Skip HEVC links as they are not accessible in the free plan
+                if "hevc" in text:
+                    print(f"Skipping HEVC link for episode {ep_nbr}: {text}")
+                    continue
+
+                # Vérifie si "1080" est dans le texte et si c'est une meilleure qualité que celle actuellement stockée.
+                if "1080" in text and best_link_tag_info['quality'] < 1080:
                     best_link_tag_info = {'quality': 1080, 'tag': label} # Met à jour avec 1080p comme meilleure qualité.
                 # Sinon, vérifie si "720" est dans le texte et si c'est une meilleure qualité que celle actuellement stockée.
                 # Cette condition n'est évaluée que si 1080p n'a pas été trouvé ou si la qualité actuelle est inférieure à 720p.
