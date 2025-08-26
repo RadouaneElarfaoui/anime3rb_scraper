@@ -1,101 +1,83 @@
-# Anime3rb Scraper
+# Anime3rb Downloader
 
-Ce projet fournit un module Python pour le web scraping du site anime3rb.com. Il permet de récupérer des informations sur les animes, leurs épisodes, les liens de streaming/téléchargement, et d'effectuer des recherches.
+This project provides a Python utility for scraping anime information and downloading episodes from anime3rb.com. It includes both a command-line interface (CLI) and a Gradio-based graphical user interface (GUI).
 
-## Fonctionnalités
+## Features
 
-- Lister les animes par page et par genre.
-- Obtenir les détails complets d'un anime.
-- Lister les épisodes d'un anime donné.
-- Récupérer les liens de streaming/téléchargement pour un épisode.
-- Rechercher des animes.
-- Lister les genres disponibles.
-- Gestion des erreurs et résilience (tentative de contournement de Cloudflare via Playwright).
+*   **Anime Search**: Search for anime titles on anime3rb.com.
+*   **Episode Listing**: Get a list of episodes for a selected anime.
+*   **Direct Download Links**: Scrape direct video download URLs, prioritizing higher quality (1080p, 720p, 480p).
+*   **Video Downloader**: Download anime episodes to your local `output/` directory.
+*   **Facebook Upload (GUI only)**: Upload downloaded videos to a configured Facebook Page.
+*   **Error Handling**: Robust error management and Cloudflare bypass using `cloudscraper`.
 
 ## Installation
 
-1.  **Cloner le dépôt (si applicable) ou télécharger les fichiers :**
+1.  **Clone the repository**:
 
     ```bash
-    git clone <URL_DU_DEPOT>
+    git clone https://github.com/RadouaneElarfaoui/anime3rb_scraper.git
     cd anime3rb_scraper
     ```
 
-2.  **Assurez-vous d'avoir Python 3.10 ou une version ultérieure installée.**
+2.  **Ensure you have Python 3.7 or later installed.**
 
-3.  **Installez les dépendances requises :**
+3.  **Install the required dependencies**:
 
     ```bash
-    pip install httpx beautifulsoup4 selectolax python-dotenv playwright
-    playwright install
+    pip install -e .
     ```
 
-## Utilisation
+    This will install all necessary packages, including `cloudscraper`, `BeautifulSoup4`, `requests`, `tqdm`, and `gradio`.
 
-Le module principal est `anime3rb_client.py`. Vous pouvez l'importer dans vos propres scripts ou exécuter le fichier directement pour voir des exemples d'utilisation.
+## Usage
 
-### Exemples d'utilisation (voir `anime3rb_client.py` pour le code complet)
+The project offers two main ways to interact: a command-line interface and a web-based GUI.
 
-```python
-import asyncio
-from anime3rb_client import Anime3rbClient, Anime3rbError, NotFoundError
+### Command-Line Interface (CLI)
 
-async def main():
-    async with Anime3rbClient() as client:
-        # Lister les animes
-        print("--- Listing Animes ---")
-        try:
-            pagination = await client.list_anime(page=1)
-            print(f"Found {len(pagination.items)} animes on page 1.")
-            if pagination.items:
-                first_anime = pagination.items[0]
-                print(f"First anime: {first_anime.title} ({first_anime.url})")
+You can use the `anime3rb_dl` command directly after installation.
 
-                # Obtenir les détails d'un anime
-                print(f"\n--- Getting Anime Details for {first_anime.title} ---")
-                full_anime = await client.get_anime(first_anime.url)
-                print(f"  Synopsis: {full_anime.synopsis[:100]}...")
-                print(f"  Genres: {\", \".join(full_anime.genres)}")
+```bash
+# Example: Download an anime by URL
+anime3rb_dl "https://anime3rb.com/titles/naruto"
 
-                # Lister les épisodes
-                print(f"\n--- Listing Episodes for {full_anime.title} ---")
-                episodes = await client.list_episodes(full_anime.slug)
-                print(f"Found {len(episodes)} episodes.")
-                if episodes:
-                    first_episode = episodes[0]
-                    print(f"  First episode: {first_episode.title}")
-
-                    # Obtenir les liens d'épisode
-                    print(f"\n--- Getting Episode Links for {first_episode.title} ---")
-                    episode_links = await client.get_episode_links(first_episode.url)
-                    for link in episode_links:
-                        print(f"  Server: {link.server}, Kind: {link.kind}, URL: {link.url}")
-
-        except Anime3rbError as e:
-            print(f"An error occurred: {e}")
-
-        # Rechercher des animes
-        print("\n--- Searching for \'naruto\' ---")
-        try:
-            search_results = await client.search("naruto")
-            print(f"Found {len(search_results.items)} search results.")
-        except Anime3rbError as e:
-            print(f"An error occurred during search: {e}")
-
-        # Lister les genres
-        print("\n--- Listing Genres ---")
-        try:
-            genres = await client.list_genres()
-            print(f"Found {len(genres)} genres.")
-        except Anime3rbError as e:
-            print(f"An error occurred during genre listing: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# For more options, run:
+anime3rb_dl --help
 ```
 
-## Avertissements légaux
+### Graphical User Interface (GUI)
 
-Ce script est fourni à des fins éducatives et de recherche uniquement. Il est conçu pour interagir de manière respectueuse avec le site web en respectant les délais et les politiques de `robots.txt`. Toute utilisation abusive ou non conforme aux lois applicables est strictement interdite. L'auteur ne peut être tenu responsable de toute utilisation inappropriée de ce script.
+Run the Gradio application to access a user-friendly web interface.
+
+```bash
+python src/anime3rb_downloader/gui_app.py
+```
+
+Then, open your web browser and navigate to the address provided by Gradio (usually `http://127.0.0.1:7860`).
+
+## Project Structure
+
+*   `src/anime3rb_downloader/cli_downloader.py`: Core CLI scraper and downloader logic.
+*   `src/anime3rb_downloader/gui_app.py`: Gradio-based GUI application.
+*   `src/notebooks/anime3rb_gui_colab.ipynb`: Jupyter Notebook for Google Colab integration.
+*   `output/`: Directory where downloaded video files are stored.
+*   `setup.py`: Package distribution configuration.
+*   `requirements.txt`: Project dependencies.
+*   `CONTRIBUTING.md`: Guidelines for contributing to the project.
+*   `CODE_OF_CONDUCT.md`: Code of conduct for community participation.
+*   `LICENSE`: Project license.
+
+## Contributing
+
+We welcome contributions! Please see `CONTRIBUTING.md` for guidelines on how to contribute to this project.
+
+## Code of Conduct
+
+Please review our `CODE_OF_CONDUCT.md` to understand the expected behavior in our community.
+
+## Legal Disclaimer
+
+This script is provided for educational and research purposes only. It is designed to interact respectfully with the website by adhering to delays and `robots.txt` policies. Any abusive use or use not in compliance with applicable laws is strictly prohibited. The author cannot be held responsible for any inappropriate use of this script.
 
 
