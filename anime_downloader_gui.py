@@ -381,7 +381,7 @@ def create_gui():
 
         def go_to_episodes(anime_data):
             return gr.update(selected=2), anime_data.get('url', '')
-        proceed_to_episodes_btn.click(fn=go_to_episodes, inputs=selected_anime_state, outputs=[tabs, episodes_url_display])
+        proceed_to_episodes_btn.click(fn=go_to_episodes, inputs=selected_anime_state, outputs=[tabs, episodes_url_input])
 
         find_episodes_btn.click(fn=scrape_episode_list, inputs=episodes_url_input, outputs=episodes_checkbox_group)
         select_all_btn.click(lambda choices: gr.update(value=choices), inputs=episodes_checkbox_group, outputs=episodes_checkbox_group)
