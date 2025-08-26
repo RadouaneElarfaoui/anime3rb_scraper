@@ -1,0 +1,28 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.so
+
+# IDE-specific files
+.vscode/
+.github/copilot-instructions.md
+
+# Temporary files
+*.tmp
+*.temp
+
+# Output directory for downloaded videos
+output/
+
+# Search and episode data files
+search_results.html
+search_results.json
+episodes_data.json
+test.html
+
+# Environment variables
+.env
+.venv/
+venv/
+.vscode/settings.json
