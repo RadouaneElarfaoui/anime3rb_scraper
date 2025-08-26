@@ -508,7 +508,7 @@ def create_gui():
         back_from_faq_btn.click(lambda: gr.update(selected=6), None, tabs)
 
     print("Lancement de l'interface Gradio...")
-    demo.launch(debug=True)
+    demo.launch(debug=True,share=True)
 
 if __name__ == "__main__":
     create_gui()
