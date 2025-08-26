@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import gradio as gr
 import re # Import regex module
 from tqdm import tqdm
+import requests # Import requests module for Facebook API interaction
 
 # --- Global Variables & Setup ---
 queue = deque()
@@ -251,6 +252,19 @@ def scrape_episode_list(url):
     except Exception as e:
         return gr.update(choices=[], value=[], label=f"Error: {e}")
 
+def list_existing_videos():
+    """
+    Lists all .mp4 files in the 'output' directory and updates the Gradio CheckboxGroup choices.
+    """
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        # Return an update to clear choices if directory doesn't exist
+        return gr.update(choices=[], value=[])
+    
+    video_files = [f for f in os.listdir(output_dir) if f.endswith(".mp4")]
+    # Update the choices of the CheckboxGroup and clear any selected values
+    return gr.update(choices=video_files, value=[])
+
 # --- Gradio UI ---
 def create_gui():
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
@@ -258,6 +272,11 @@ def create_gui():
         selected_anime_state = gr.State({})
         anime_map_state = gr.State({})
         selected_episodes_state = gr.State([])
+        selected_files_to_upload_state = gr.State([]) # New state for files to upload
+        fb_config_state = gr.State({ # New state for FB API config
+            "access_token": "",
+            "page_id": ""
+        })
 
         with gr.Tabs() as tabs:
             with gr.TabItem("Recherche", id=0):
@@ -297,6 +316,53 @@ def create_gui():
                 selected_episodes_display = gr.Markdown("Aucun épisode sélectionné.")
                 download_button = gr.Button("Lancer le téléchargement", variant="primary")
                 output_text = gr.Textbox(label="Statut", interactive=False, lines=10)
+                with gr.Row():
+                    back_to_episodes_btn_from_download = gr.Button("Précédent")
+                    proceed_to_existing_files_btn = gr.Button("Suivant")
+
+            with gr.TabItem("Fichiers existants", id=4): # Nouveau Tab
+                gr.Markdown("## Fichiers vidéo existants")
+                list_files_btn = gr.Button("Actualiser la liste des fichiers")
+                existing_files_checkbox_group = gr.CheckboxGroup(label="Fichiers trouvés dans 'output'", interactive=True)
+                with gr.Row():
+                    back_from_files_btn = gr.Button("Précédent")
+                    proceed_to_upload_btn = gr.Button("Suivant", interactive=False) # Changed button name and interaction
+
+            with gr.TabItem("Upload vers Facebook", id=5): # Nouveau Tab pour l'upload
+                gr.Markdown("## Uploader les vidéos sélectionnées sur Facebook")
+                upload_files_display = gr.Markdown("Aucun fichier sélectionné pour l'upload.")
+                video_title_input = gr.Textbox(label="Titre de la vidéo (optionnel)", placeholder="Entrez un titre pour la vidéo...")
+                video_description_input = gr.Textbox(label="Description de la vidéo (optionnel)", placeholder="Entrez une description pour la vidéo...", lines=3)
+                upload_to_fb_button = gr.Button("Lancer l'upload vers Facebook", variant="primary")
+                upload_output_text = gr.Textbox(label="Statut de l'upload", interactive=False, lines=5)
+                with gr.Row():
+                    back_from_upload_btn = gr.Button("Précédent")
+                    proceed_to_fb_config_btn = gr.Button("Suivant") # New button to go to FB config
+
+            with gr.TabItem("Configuration FB API", id=6): # Nouveau Tab pour la configuration FB API
+                gr.Markdown("## Configuration de l'API Facebook")
+                fb_access_token_input = gr.Textbox(label="Facebook Page Access Token", placeholder="Entrez votre Page Access Token")
+                fb_page_id_input = gr.Textbox(label="Facebook Page ID", placeholder="Entrez l'ID de votre page Facebook")
+                save_fb_config_button = gr.Button("Sauvegarder la configuration", variant="primary")
+                fb_config_status_text = gr.Textbox(label="Statut de la configuration", interactive=False)
+                with gr.Row():
+                    back_from_fb_config_btn = gr.Button("Précédent")
+                    proceed_to_faq_btn = gr.Button("Suivant") # New button to go to FAQ tab
+
+            with gr.TabItem("FAQ", id=7): # Nouveau Tab pour les Questions Fréquentes
+                gr.Markdown("## Questions Fréquentes (FAQ)")
+                with gr.Accordion("Comment rechercher un anime ?", open=False):
+                    gr.Markdown("Pour rechercher un anime, allez dans l'onglet **Recherche**, entrez le nom de l'anime dans le champ de texte et cliquez sur **Rechercher**. Les résultats apparaîtront en dessous.")
+                with gr.Accordion("Comment télécharger des épisodes ?", open=False):
+                    gr.Markdown("Après avoir recherché et sélectionné un anime, allez dans l'onglet **Détails**, puis **Épisodes**. Cliquez sur **Rechercher les épisodes**, sélectionnez ceux que vous voulez et cliquez sur **Lancer le téléchargement** dans l'onglet **Téléchargement**.")
+                with gr.Accordion("Où sont sauvegardés les fichiers téléchargés ?", open=False):
+                    gr.Markdown("Les fichiers vidéo téléchargés sont sauvegardés dans le dossier `output/` à la racine de votre projet.")
+                with gr.Accordion("Comment uploader des vidéos sur Facebook ?", open=False):
+                    gr.Markdown("Dans l'onglet **Fichiers existants**, actualisez la liste, sélectionnez les vidéos à uploader, puis allez dans l'onglet **Upload vers Facebook**. Remplissez le titre et la description (optionnel) et cliquez sur **Lancer l'upload vers Facebook**.")
+                with gr.Accordion("Comment configurer l'API Facebook ?", open=False):
+                    gr.Markdown("Allez dans l'onglet **Configuration FB API**. Entrez votre **Facebook Page Access Token** et l'**ID de votre page Facebook**, puis cliquez sur **Sauvegarder la configuration**.")
+                with gr.Row():
+                    back_from_faq_btn = gr.Button("Précédent")
 
         search_button.click(fn=search_anime, inputs=search_input, outputs=[search_results_radio, anime_map_state])
         search_results_radio.change(fn=lambda s: gr.update(interactive=bool(s)), inputs=search_results_radio, outputs=details_button)
@@ -315,7 +381,7 @@ def create_gui():
 
         def go_to_episodes(anime_data):
             return gr.update(selected=2), anime_data.get('url', '')
-        proceed_to_episodes_btn.click(fn=go_to_episodes, inputs=selected_anime_state, outputs=[tabs, episodes_url_input])
+        proceed_to_episodes_btn.click(fn=go_to_episodes, inputs=selected_anime_state, outputs=[tabs, episodes_url_display])
 
         find_episodes_btn.click(fn=scrape_episode_list, inputs=episodes_url_input, outputs=episodes_checkbox_group)
         select_all_btn.click(lambda choices: gr.update(value=choices), inputs=episodes_checkbox_group, outputs=episodes_checkbox_group)
@@ -348,6 +414,99 @@ def create_gui():
             inputs=[download_url_input, selected_episodes_state], 
             outputs=output_text
         )
+
+        # Navigation pour l'onglet "Téléchargement"
+        back_to_episodes_btn_from_download.click(lambda: gr.update(selected=2), None, tabs)
+        proceed_to_existing_files_btn.click(lambda: gr.update(selected=4), None, tabs)
+
+        # Écouteurs d'événements pour le nouvel onglet "Fichiers existants"
+        list_files_btn.click(fn=list_existing_videos, outputs=existing_files_checkbox_group)
+        existing_files_checkbox_group.change(
+            fn=lambda s: gr.update(interactive=bool(s)), 
+            inputs=existing_files_checkbox_group, 
+            outputs=proceed_to_upload_btn # Update interaction for the new button
+        )
+        back_from_files_btn.click(lambda: gr.update(selected=3), None, tabs)
+        
+        def go_to_upload_tab(selected_files):
+            if not selected_files:
+                return gr.update(selected=4), [], "Veuillez sélectionner au moins un fichier à uploader."
+            display_message = f"**Fichiers sélectionnés pour l'upload :** `{', '.join(selected_files)}`"
+            return gr.update(selected=5), selected_files, display_message
+
+        proceed_to_upload_btn.click(
+            fn=go_to_upload_tab,
+            inputs=existing_files_checkbox_group,
+            outputs=[tabs, selected_files_to_upload_state, upload_files_display]
+        )
+
+        # Écouteurs d'événements pour le nouvel onglet "Upload vers Facebook"
+        def upload_videos_to_facebook(files_to_upload, title, description, fb_config):
+            if not files_to_upload:
+                return "Aucun fichier sélectionné pour l'upload."
+            if not fb_config.get("access_token") or not fb_config.get("page_id"):
+                return "Erreur: La configuration de l'API Facebook est incomplète. Veuillez la remplir dans l'onglet 'Configuration FB API'."
+            
+            results = []
+            for filename in files_to_upload:
+                filepath = os.path.join("output", filename) # Ensure 'output' is the correct directory
+                
+                # Facebook Graph API endpoint for video uploads
+                upload_url = f"https://graph.facebook.com/v18.0/{fb_config['page_id']}/videos"
+                
+                params = {
+                    'access_token': fb_config['access_token'],
+                    'title': title if title else filename, # Use provided title or filename
+                    'description': description # Use provided description
+                }
+                
+                try:
+                    with open(filepath, 'rb') as video_file:
+                        files = {'source': video_file}
+                        response = requests.post(upload_url, params=params, files=files)
+                        response.raise_for_status() # Raise an exception for HTTP errors
+                        
+                        results.append(f"✅ Upload de '{filename}' réussi. Réponse: {response.json()}")
+                except requests.exceptions.RequestException as e:
+                    results.append(f"❌ Échec de l'upload de '{filename}': {e}")
+            return "\n".join(results)
+
+        upload_to_fb_button.click(
+            fn=upload_videos_to_facebook,
+            inputs=[selected_files_to_upload_state, video_title_input, video_description_input, fb_config_state],
+            outputs=upload_output_text
+        )
+        back_from_upload_btn.click(lambda: gr.update(selected=4), None, tabs)
+        proceed_to_fb_config_btn.click(lambda: gr.update(selected=6), None, tabs) # Navigate to FB config tab
+
+        # Écouteurs d'événements pour le nouvel onglet "Configuration FB API"
+        def save_facebook_config(access_token, page_id):
+            config = {
+                "access_token": access_token,
+                "page_id": page_id
+            }
+            # In a real application, you would save this securely (e.g., to a config file)
+            # For this example, we just update the state and return a message.
+            print(f"Facebook API Configuration Saved: {config}")
+            return config, "Configuration sauvegardée avec succès!"
+
+        save_fb_config_button.click(
+            fn=save_facebook_config,
+            inputs=[fb_access_token_input, fb_page_id_input],
+            outputs=[fb_config_state, fb_config_status_text]
+        )
+        # Update config inputs when state changes (e.g., on initial load or if config is loaded from file)
+        fb_config_state.change(
+            fn=lambda cfg: (cfg.get("access_token", ""), cfg.get("page_id", "")),
+            inputs=fb_config_state,
+            outputs=[fb_access_token_input, fb_page_id_input]
+        )
+        back_from_fb_config_btn.click(lambda: gr.update(selected=5), None, tabs)
+        proceed_to_faq_btn.click(lambda: gr.update(selected=7), None, tabs) # Navigate to FAQ tab
+
+        # Écouteurs d'événements pour le nouvel onglet "FAQ"
+        back_from_faq_btn.click(lambda: gr.update(selected=6), None, tabs)
+
     print("Lancement de l'interface Gradio...")
     demo.launch(debug=True)
 
